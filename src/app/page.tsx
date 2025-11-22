@@ -219,7 +219,7 @@ export default function Home() {
 
                   <button
                     onClick={() => deleteReminder(reminder.id)}
-                    className="text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                    className="text-neutral-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all p-1"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -266,7 +266,7 @@ export default function Home() {
                     <span className="text-[10px] text-neutral-400">{format(new Date(note.createdAt), 'MMM d')}</span>
                     <button
                       onClick={() => deleteNote(note.id)}
-                      className="text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                      className="text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
