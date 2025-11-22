@@ -5,6 +5,15 @@ import { Plus, Trash2, Calendar, CheckCircle2, StickyNote, X } from 'lucide-reac
 import { format } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { 
+  getReminders, 
+  addReminder as addReminderAction, 
+  toggleReminder as toggleReminderAction, 
+  deleteReminder as deleteReminderAction,
+  getNotes, 
+  addNote as addNoteAction, 
+  deleteNote as deleteNoteAction 
+} from './actions';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -38,41 +47,26 @@ export default function Home() {
   
   const [noteContent, setNoteContent] = useState('');
 
-  // Load from local storage on mount
+  // Load from DB on mount
   useEffect(() => {
     setMounted(true);
-    const savedReminders = localStorage.getItem('reminders');
-    const savedNotes = localStorage.getItem('notes');
-    if (savedReminders) {
+    const fetchData = async () => {
         try {
-            setReminders(JSON.parse(savedReminders));
-        } catch (e) {
-            console.error("Failed to parse reminders", e);
+            const [fetchedReminders, fetchedNotes] = await Promise.all([
+                getReminders(),
+                getNotes()
+            ]);
+            // Type assertions because SQL returns generic objects, but our shape matches
+            setReminders(fetchedReminders as Reminder[]);
+            setNotes(fetchedNotes as Note[]);
+        } catch (error) {
+            console.error("Failed to fetch data:", error);
         }
-    }
-    if (savedNotes) {
-        try {
-             setNotes(JSON.parse(savedNotes));
-        } catch (e) {
-            console.error("Failed to parse notes", e);
-        }
-    }
+    };
+    fetchData();
   }, []);
 
-  // Save to local storage on change
-  useEffect(() => {
-    if (mounted) {
-        localStorage.setItem('reminders', JSON.stringify(reminders));
-    }
-  }, [reminders, mounted]);
-
-  useEffect(() => {
-    if (mounted) {
-        localStorage.setItem('notes', JSON.stringify(notes));
-    }
-  }, [notes, mounted]);
-
-  const addReminder = (e: React.FormEvent) => {
+  const handleAddReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reminderTitle || !reminderDate) return;
 
@@ -84,21 +78,49 @@ export default function Home() {
       completed: false,
     };
 
+    // Optimistic update
     setReminders([...reminders, newReminder]);
     setReminderTitle('');
     setReminderDate('');
     setReminderType('deadline');
+
+    // Server update
+    try {
+        await addReminderAction(newReminder);
+    } catch (error) {
+        console.error("Failed to add reminder:", error);
+        // Rollback on error could be implemented here
+    }
   };
 
-  const toggleReminder = (id: string) => {
+  const handleToggleReminder = async (id: string) => {
+    const reminder = reminders.find(r => r.id === id);
+    if (!reminder) return;
+
+    // Optimistic update
     setReminders(reminders.map(r => r.id === id ? { ...r, completed: !r.completed } : r));
+
+    // Server update
+    try {
+        await toggleReminderAction(id, !reminder.completed);
+    } catch (error) {
+        console.error("Failed to toggle reminder:", error);
+    }
   };
 
-  const deleteReminder = (id: string) => {
+  const handleDeleteReminder = async (id: string) => {
+    // Optimistic update
     setReminders(reminders.filter(r => r.id !== id));
+
+    // Server update
+    try {
+        await deleteReminderAction(id);
+    } catch (error) {
+        console.error("Failed to delete reminder:", error);
+    }
   };
 
-  const addNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteContent) return;
 
@@ -108,16 +130,32 @@ export default function Home() {
       createdAt: new Date().toISOString(),
     };
 
-    setNotes([newNote, ...notes]); // Newest first
+    // Optimistic update
+    setNotes([newNote, ...notes]);
     setNoteContent('');
+
+    // Server update
+    try {
+        await addNoteAction(newNote);
+    } catch (error) {
+        console.error("Failed to add note:", error);
+    }
   };
 
-  const deleteNote = (id: string) => {
+  const handleDeleteNote = async (id: string) => {
+    // Optimistic update
     setNotes(notes.filter(n => n.id !== id));
+
+    // Server update
+    try {
+        await deleteNoteAction(id);
+    } catch (error) {
+        console.error("Failed to delete note:", error);
+    }
   };
 
   if (!mounted) {
-      return null; // Prevent hydration mismatch
+      return null;
   }
 
   return (
@@ -143,7 +181,7 @@ export default function Home() {
             </div>
 
             {/* Add Reminder Form */}
-            <form onSubmit={addReminder} className="bg-white p-4 rounded-xl shadow-sm border border-neutral-100 space-y-3 transition-all focus-within:shadow-md">
+            <form onSubmit={handleAddReminder} className="bg-white p-4 rounded-xl shadow-sm border border-neutral-100 space-y-3 transition-all focus-within:shadow-md">
               <input
                 type="text"
                 placeholder="What needs to be done?"
@@ -191,7 +229,7 @@ export default function Home() {
                   )}
                 >
                   <button
-                    onClick={() => toggleReminder(reminder.id)}
+                    onClick={() => handleToggleReminder(reminder.id)}
                     className={cn(
                       "w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0",
                       reminder.completed ? "bg-neutral-900 border-neutral-900" : "border-neutral-300 hover:border-neutral-400"
@@ -215,10 +253,10 @@ export default function Home() {
                       </span>
                       <span>{format(new Date(reminder.date), 'MMM d, h:mm a')}</span>
                     </div>
-        </div>
+                  </div>
 
                   <button
-                    onClick={() => deleteReminder(reminder.id)}
+                    onClick={() => handleDeleteReminder(reminder.id)}
                     className="text-neutral-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all p-1"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -236,7 +274,7 @@ export default function Home() {
               </div>
 
             {/* Add Note Form */}
-            <form onSubmit={addNote} className="relative group">
+            <form onSubmit={handleAddNote} className="relative group">
               <textarea
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
@@ -245,7 +283,7 @@ export default function Home() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    addNote(e);
+                    handleAddNote(e);
                   }
                 }}
               />
@@ -265,7 +303,7 @@ export default function Home() {
                   <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center">
                     <span className="text-[10px] text-neutral-400">{format(new Date(note.createdAt), 'MMM d')}</span>
                     <button
-                      onClick={() => deleteNote(note.id)}
+                      onClick={() => handleDeleteNote(note.id)}
                       className="text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
                     >
                       <X className="w-3.5 h-3.5" />
